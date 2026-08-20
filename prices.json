@@ -1,0 +1,63 @@
+{
+  "_comment": [
+    "Anthropic API list prices, USD per million tokens. Used to value Claude Code usage",
+    "at what the same work would have cost on the API. On a subscription this is NOT what",
+    "you pay - see the plan panel in the dashboard for actual spend.",
+    "",
+    "Each model holds a LIST of periods so a price change never rewrites history:",
+    "the aggregator picks the entry whose 'from' is the latest date <= the day being",
+    "priced. Claude Sonnet 5 is on introductory pricing through 2026-08-31, which is",
+    "exactly why this file is dated rather than flat - a single number would silently",
+    "reprice every past day the moment the promotion ends.",
+    "",
+    "cache_read / cache_write_5m / cache_write_1h are multipliers on the INPUT price.",
+    "They are not optional detail: cache reads are ~99% of all input tokens here, so",
+    "pricing them at 1.0 instead of 0.1 overstates the total by roughly ten times."
+  ],
+  "multipliers": {
+    "cache_read": 0.1,
+    "cache_write_5m": 1.25,
+    "cache_write_1h": 2.0
+  },
+  "models": {
+    "claude-opus-5": [
+      { "from": "2000-01-01", "input": 5.0, "output": 25.0 }
+    ],
+    "claude-opus-4-8": [
+      { "from": "2000-01-01", "input": 5.0, "output": 25.0 }
+    ],
+    "claude-opus-4-7": [
+      { "from": "2000-01-01", "input": 5.0, "output": 25.0 }
+    ],
+    "claude-opus-4-6": [
+      { "from": "2000-01-01", "input": 5.0, "output": 25.0 }
+    ],
+    "claude-sonnet-5": [
+      { "from": "2000-01-01", "input": 2.0, "output": 10.0, "note": "introductory" },
+      { "from": "2026-09-01", "input": 3.0, "output": 15.0 }
+    ],
+    "claude-sonnet-4-6": [
+      { "from": "2000-01-01", "input": 3.0, "output": 15.0 }
+    ],
+    "claude-fable-5": [
+      { "from": "2000-01-01", "input": 10.0, "output": 50.0 }
+    ],
+    "claude-mythos-5": [
+      { "from": "2000-01-01", "input": 10.0, "output": 50.0 }
+    ],
+    "claude-haiku-4-5": [
+      { "from": "2000-01-01", "input": 1.0, "output": 5.0 }
+    ]
+  },
+  "display_names": {
+    "claude-opus-5": "Opus 5",
+    "claude-opus-4-8": "Opus 4.8",
+    "claude-opus-4-7": "Opus 4.7",
+    "claude-opus-4-6": "Opus 4.6",
+    "claude-sonnet-5": "Sonnet 5",
+    "claude-sonnet-4-6": "Sonnet 4.6",
+    "claude-fable-5": "Fable 5",
+    "claude-mythos-5": "Mythos 5",
+    "claude-haiku-4-5": "Haiku 4.5"
+  }
+}

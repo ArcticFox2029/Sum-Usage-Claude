@@ -1,0 +1,1653 @@
+<!doctype html>
+<!-- Dark is the default rather than a follow-the-OS choice: this is a dashboard that gets
+     opened late at night beside a terminal, and the palette's dark steps are the ones that
+     clear 3:1 on every slot (light-mode aqua sits at 2.74:1). The toggle still wins in both
+     directions and its choice is remembered. -->
+<html lang="th" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Usage — Sum-Usage-Claude</title>
+<style>
+/* Palette: the validated 8-slot reference set, of which only the first three categorical
+   slots are used. Three is the documented all-pairs-safe cap, and the model mix genuinely
+   has three that matter (Sonnet 5, Opus 5, Fable 5) — everything else folds into a neutral
+   "other" rather than being seated in a fourth hue. Light-mode aqua sits at 2.74:1 against
+   the surface, below the 3:1 bar, so every chart that uses it ships visible direct labels
+   and a table view; identity never rests on that colour alone. */
+:root {
+  color-scheme: light;
+  --page:           #f9f9f7;
+  --surface:        #fcfcfb;
+  --ink:            #0b0b0b;
+  --ink-2:          #52514e;
+  --ink-muted:      #898781;
+  --grid:           #e1e0d9;
+  --axis:           #c3c2b7;
+  --hairline:       rgba(11,11,11,0.10);
+  --series-1:       #2a78d6;
+  --series-2:       #eb6834;
+  --series-3:       #1baf7a;
+  --neutral:        #c3c2b7;
+  --good:           #006300;
+  /* Heatmap time bands. Purple for the small hours was the ask; blue for working hours was too,
+     and that pair had to go — measured against the corpus of adjacent cells it scores CVD ΔE 1.9
+     and, worse, normal-vision ΔE 9.8, well under the 15 floor: full-colour readers cannot reliably
+     tell them apart either. Green takes the working band instead, orange the evening, which also
+     happens to read as a day arc (night -> work -> sunset). Validated all-pairs in both modes. */
+  --band-night:     #4a3aa7;
+  --band-work:      #1baf7a;
+  --band-evening:   #eb6834;
+  --shadow:         0 1px 2px rgba(11,11,11,0.04), 0 8px 24px -12px rgba(11,11,11,0.12);
+  --radius:         14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page:         #0d0d0d;
+    --surface:      #1a1a19;
+    --ink:          #ffffff;
+    --ink-2:        #c3c2b7;
+    --ink-muted:    #898781;
+    --grid:         #2c2c2a;
+    --axis:         #383835;
+    --hairline:     rgba(255,255,255,0.10);
+    --series-1:     #3987e5;
+    --series-2:     #d95926;
+    --series-3:     #199e70;
+    --neutral:      #383835;
+    --good:         #0ca30c;
+    --band-night:   #9085e9;
+    --band-work:    #199e70;
+    --band-evening: #d95926;
+    --shadow:       0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page:         #0d0d0d;
+  --surface:      #1a1a19;
+  --ink:          #ffffff;
+  --ink-2:        #c3c2b7;
+  --ink-muted:    #898781;
+  --grid:         #2c2c2a;
+  --axis:         #383835;
+  --hairline:     rgba(255,255,255,0.10);
+  --series-1:     #3987e5;
+  --series-2:     #d95926;
+  --series-3:     #199e70;
+  --neutral:      #383835;
+  --good:         #0ca30c;
+  --band-night:   #9085e9;
+  --band-work:    #199e70;
+  --band-evening: #d95926;
+  --shadow:       0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -12px rgba(0,0,0,0.6);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 72px; }
+
+/* ---------- header ---------- */
+header.top { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+header.top h1 { font-size: 21px; font-weight: 640; margin: 0; letter-spacing: -0.01em; }
+header.top .sub { color: var(--ink-muted); font-size: 13px; margin-top: 3px; }
+.spacer { flex: 1 1 auto; }
+.ghost-btn {
+  background: var(--surface); color: var(--ink-2);
+  border: 1px solid var(--hairline); border-radius: 9px;
+  padding: 7px 13px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.ghost-btn:hover { color: var(--ink); }
+
+/* ---------- tabs ---------- */
+nav.tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--hairline); }
+nav.tabs button {
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 9px 15px; margin-bottom: -1px;
+  font: inherit; font-size: 14px; color: var(--ink-muted); cursor: pointer;
+}
+nav.tabs button:hover { color: var(--ink-2); }
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--series-1); font-weight: 560; }
+
+/* ---------- cards ---------- */
+.card {
+  background: var(--surface); border: 1px solid var(--hairline);
+  border-radius: var(--radius); padding: 20px 22px; box-shadow: var(--shadow);
+}
+.card h2 { font-size: 14px; font-weight: 600; margin: 0 0 2px; letter-spacing: -0.005em; }
+.card .hint { font-size: 12.5px; color: var(--ink-muted); margin: 0 0 16px; }
+.grid { display: grid; gap: 16px; }
+.cols-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 860px) { .cols-2 { grid-template-columns: 1fr; } }
+
+/* ---------- emoji labels ----------
+   Emoji sit in headings and tile labels only — never on a bar, a cell, or a value. They are
+   wayfinding and warmth; nothing here encodes data, so the charts keep reading exactly as the
+   colour and mark specs intend. Sized slightly below the text so they punctuate rather than shout,
+   and given an explicit emoji font stack so Chrome doesn't fall back to a flat monochrome glyph. */
+.em { font-size: 14px; line-height: 1; flex: none;
+      font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+.card h2 { display: flex; align-items: center; gap: 8px; }
+.kpi .label { display: flex; align-items: center; gap: 6px; }
+.hero-label .em { font-size: 15px; }
+
+/* ---------- hero ---------- */
+.hero-card { display: flex; gap: 34px; align-items: center; flex-wrap: wrap; position: relative; overflow: hidden; }
+/* A single soft wash anchored to the corner. It sits under the content and touches no mark,
+   so it reads as surface treatment rather than as an encoding. */
+.hero-card::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(130% 150% at 0% 0%,
+    color-mix(in srgb, var(--series-1) 18%, transparent), transparent 62%);
+}
+.hero-left { position: relative; flex: 0 1 auto; }
+.hero-figure { font-size: 60px; line-height: 1; font-weight: 660; letter-spacing: -0.03em; }
+.hero-label { font-size: 13px; color: var(--ink-muted); margin-bottom: 6px; }
+.hero-note { font-size: 13px; color: var(--ink-2); max-width: 40ch; position: relative; }
+.hero-note b { color: var(--ink); font-weight: 600; }
+
+/* Paid vs received, drawn to one shared scale — the multiple as a picture rather than a
+   number the reader has to take on trust. */
+.hero-compare { position: relative; flex: 1 1 260px; min-width: 240px; }
+.cmp-row { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; color: var(--ink-2); margin-bottom: 5px; }
+.cmp-row b { color: var(--ink); font-weight: 620; font-variant-numeric: tabular-nums; }
+.cmp-track { height: 12px; border-radius: 6px; margin-bottom: 15px;
+             background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.cmp-track i { display: block; height: 100%; border-radius: 6px; background: var(--neutral); min-width: 3px; }
+.cmp-track i.accent { background: linear-gradient(90deg,
+  var(--series-1), color-mix(in srgb, var(--series-1) 60%, var(--series-3))); }
+
+/* ---------- rank badge ----------
+   Medals rather than 1/2/3: same information, read faster, and the table is sorted by date so the
+   badge is the only thing marking the heavy days. A fixed-width blank keeps every date column
+   aligned whether or not its row placed. */
+.rank { display: inline-block; width: 20px; margin-right: 6px; text-align: center;
+        font-size: 13px; line-height: 1;
+        font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+
+/* ---------- stat tiles ---------- */
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+@media (max-width: 860px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+.kpi .label { font-size: 12.5px; color: var(--ink-muted); }
+.kpi .value { font-size: 27px; font-weight: 620; letter-spacing: -0.02em; margin-top: 3px; }
+.kpi .value .unit { font-size: 14px; font-weight: 500; color: var(--ink-muted); margin-left: 3px; letter-spacing: 0; }
+.kpi .foot { font-size: 12px; color: var(--ink-muted); margin-top: 4px; }
+
+/* ---------- charts ---------- */
+.chart-scroll { overflow-x: auto; }
+svg.chart { display: block; width: 100%; height: auto; }
+svg.chart text { fill: var(--ink-muted); font-size: 11px; }
+svg.chart text.val { fill: var(--ink-2); font-size: 11px; font-weight: 560; }
+/* The one direct label on the chart, so it gets full-strength ink. It sits on the surface
+   above the bar, never on the fill — a value drawn inside a mid-blue bar is unreadable in
+   either theme, and text never wears the data colour. */
+svg.chart text.peak { fill: var(--ink); font-size: 12px; font-weight: 640; }
+svg.chart .gridline { stroke: var(--grid); stroke-width: 1; }
+svg.chart .axisline { stroke: var(--axis); stroke-width: 1; }
+svg.chart .hit { fill: transparent; cursor: pointer; }
+svg.chart .bar { transition: opacity .12s ease; }
+svg.chart.dimmed .bar:not(.on) { opacity: .38; }
+
+/* ---------- legend ---------- */
+.legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; }
+.legend span { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2); }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* ---------- tooltip ---------- */
+#tip {
+  position: fixed; z-index: 50; pointer-events: none; opacity: 0;
+  transition: opacity .1s ease;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--hairline); border-radius: 10px;
+  box-shadow: var(--shadow); padding: 9px 12px; font-size: 12.5px;
+  min-width: 130px; max-width: 260px;
+}
+#tip .t-head { font-weight: 620; margin-bottom: 5px; }
+#tip .t-row { display: flex; justify-content: space-between; gap: 14px; color: var(--ink-2); }
+#tip .t-row b { color: var(--ink); font-weight: 560; font-variant-numeric: tabular-nums; }
+
+/* ---------- tables ---------- */
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--ink-muted); font-weight: 560; font-size: 12px; }
+td { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+td.strong { color: var(--ink); font-weight: 560; }
+tbody tr:hover td { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
+tbody tr.clickable { cursor: pointer; }
+.minibar { height: 7px; border-radius: 4px; background: var(--series-1); min-width: 2px; }
+.minibar-track { width: 100%; min-width: 90px; }
+td .swatch { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 6px; }
+
+/* ---------- plan bar (above the tabs) ---------- */
+/* ---------- billing cycles ---------- */
+.cycles-card { padding: 14px 18px; }
+.cycles-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 600; color: var(--ink); }
+.cycles-head select { font: inherit; font-size: 13px; font-weight: 500; padding: 5px 8px; }
+.cycle-form { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.cycle-form input[type=date] { min-width: 150px; }
+.cycle-form input[type=number] { width: 110px; }
+.cycle-dash { color: var(--muted); }
+.cycle-form .fx-field { margin-left: auto; }
+.cycle-form .fx-field label { font-size: 12px; color: var(--muted); margin-right: 6px; }
+.cycle-form .fx-field input { width: 88px; }
+.cycles-card button {
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  border-radius: 8px; padding: 7px 12px; cursor: pointer; font: inherit; font-size: 13px;
+}
+.cycles-card button:hover { border-color: var(--muted); }
+#cyc-save { border-color: color-mix(in srgb, var(--series-1) 55%, var(--line)); font-weight: 600; }
+.cycle-msg { margin-top: 10px; font-size: 13px; line-height: 1.6; }
+.cycle-msg.warn {
+  padding: 9px 12px; border-radius: 8px;
+  background: color-mix(in srgb, var(--series-2) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--series-2) 35%, transparent);
+}
+.cycle-msg.ok { color: var(--muted); }
+.cycle-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 14px; }
+.cycle-table th, .cycle-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: right; }
+.cycle-table th:first-child, .cycle-table td:first-child { text-align: left; }
+.cycle-table th:last-child, .cycle-table td:last-child { text-align: center; width: 78px; }
+.cycle-table th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.cycle-table td { font-variant-numeric: tabular-nums; }
+.cycle-table tr.current td { font-weight: 620; }
+.cycle-table tr.editing td { background: color-mix(in srgb, var(--series-1) 10%, transparent); }
+.row-btn { border: none; background: none; cursor: pointer; font-size: 15px; padding: 2px 4px; opacity: .75; }
+.row-btn:hover { opacity: 1; }
+.cycle-scroll { overflow-x: auto; }
+.hidden { display: none; }
+
+
+/* ---------- sparkline ---------- */
+svg.spark { display: block; width: 100%; height: 30px; margin-top: 8px; overflow: visible; }
+
+/* ---------- heatmap ---------- */
+.heat { display: grid; grid-template-columns: 46px 1fr; gap: 6px; align-items: center; }
+.heat-row { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
+.heat-cell { aspect-ratio: 1 / 1; border-radius: 2px; min-height: 9px; }
+.heat-label { font-size: 11px; color: var(--ink-muted); text-align: right; font-variant-numeric: tabular-nums; }
+.heat-scale { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+              font-size: 12px; color: var(--ink-muted); margin-top: 12px; }
+.heat-scale i { width: 15px; height: 10px; border-radius: 2px; display: inline-block; }
+/* The legend is the identity channel: three hues can't be told apart by memory alone, and one of
+   them sits under 3:1 on the light surface. */
+.band-key { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+
+.plan-row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field label { font-size: 12px; color: var(--ink-muted); }
+.field select, .field input {
+  background: var(--page); color: var(--ink);
+  border: 1px solid var(--hairline); border-radius: 9px;
+  padding: 8px 11px; font: inherit; font-size: 13.5px; min-width: 120px;
+}
+.field input { width: 130px; font-variant-numeric: tabular-nums; }
+.note {
+  font-size: 12.5px; color: var(--ink-2); background: color-mix(in srgb, var(--series-1) 7%, transparent);
+  border-left: 2px solid var(--series-1); border-radius: 0 8px 8px 0;
+  padding: 10px 14px; margin-top: 16px;
+}
+.note b { color: var(--ink); }
+
+/* ---------- day picker ---------- */
+.day-nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+.day-nav select { min-width: 190px; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.muted-line { font-size: 12.5px; color: var(--ink-muted); margin-top: 12px; }
+.hidden { display: none !important; }
+.compbar { display: flex; gap: 2px; height: 26px; border-radius: 6px; overflow: hidden; margin-top: 4px; }
+.compbar i { display: block; height: 100%; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1> 🐰 <span data-i18n="title">การใช้งาน Claude</span></h1>
+      <div class="sub" id="range-sub">—</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="ghost-btn" id="lang-btn" type="button" data-i18n="lang">ไทย / EN</button>
+    <button class="ghost-btn" id="theme-btn" type="button" data-i18n="theme">โหมดสว่าง / มืด</button>
+  </header>
+
+  <!-- Above the tabs rather than inside a tab: the billing cycle scopes every figure on every view,
+       and a control that changes what all three views mean should not be reachable from only one of
+       them. This replaced a fixed plan selector (plan / USD-per-month): once real invoice amounts are
+       entered per cycle, a flat monthly price is both redundant and wrong — it cannot express a plan
+       change, which is exactly what happened between the Jul and Aug invoices. -->
+  <div class="card cycles-card" id="cycles-card">
+    <div class="cycles-head">
+      <span data-i18n="cycle">🧾 รอบบิล</span>
+      <select id="cycle-select" data-i18n-aria="cycle.aria" aria-label="เลือกรอบบิลที่จะดู"></select>
+      <span class="muted-line" id="cycle-scope-note"></span>
+    </div>
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true"  data-view="overview" data-i18n="tab.overview">📈 ภาพรวม</button>
+    <button role="tab" aria-selected="false" data-view="daily" data-i18n="tab.daily">🗓 รายวัน</button>
+    <button role="tab" aria-selected="false" data-view="day" data-i18n="tab.day">🔍 เจาะรายวัน</button>
+    <button role="tab" aria-selected="false" data-view="cycles" data-i18n="tab.cycles">🧾 รอบบิล</button>
+  </nav>
+
+  <!-- ══════════ OVERVIEW ══════════ -->
+  <section id="view-overview" class="stack">
+
+    <div class="card hero-card">
+      <div class="hero-left">
+        <div class="hero-label" style="display:flex;align-items:center;gap:6px"><span class="em">✨</span><span data-i18n="hero.multiple">เดือนนี้คุ้มกี่เท่า</span></div>
+        <div class="hero-figure" id="hero-multiple">—</div>
+      </div>
+      <div class="hero-note" id="hero-note">—</div>
+      <div class="hero-compare">
+        <div class="cmp-row"><span data-i18n="hero.paid">จ่ายค่าแพลน</span><b id="cmp-paid">—</b></div>
+        <div class="cmp-track"><i id="cmp-paid-bar" style="width:3px"></i></div>
+        <div class="cmp-row"><span data-i18n="hero.value">มูลค่าที่ได้กลับมา</span><b id="cmp-value">—</b></div>
+        <div class="cmp-track"><i id="cmp-value-bar" class="accent" style="width:3px"></i></div>
+      </div>
+    </div>
+
+    <div class="kpis">
+      <div class="card kpi">
+        <div class="label"><span class="em">💰</span><span data-i18n="kpi.apivalue">มูลค่าถ้าจ่ายแบบ API</span></div>
+        <div class="value" id="kpi-value">—</div>
+        <div class="foot" id="kpi-value-foot">—</div>
+        <svg id="spark-value" class="spark"></svg>
+      </div>
+      <div class="card kpi">
+        <div class="label"><span class="em">💳</span><span data-i18n="kpi.paid">ค่าแพลนที่จ่ายจริง</span></div>
+        <div class="value" id="kpi-paid">—</div>
+        <div class="foot" id="kpi-paid-foot">—</div>
+      </div>
+      <div class="card kpi">
+        <div class="label"><span class="em">⚡</span><span data-i18n="kpi.perbaht">จำนวนโทเคนต่อราคา 1 บาท</span></div>
+        <div class="value" id="kpi-perbaht">—</div>
+        <div class="foot" data-i18n="kpi.perbaht.foot">รวมทุกชนิดโทเคน</div>
+        <svg id="spark-tokens" class="spark"></svg>
+      </div>
+      <div class="card kpi">
+        <div class="label"><span class="em">💬</span><span data-i18n="kpi.requests">จำนวน Request</span></div>
+        <div class="value" id="kpi-calls">—</div>
+        <div class="foot" id="kpi-calls-foot">—</div>
+        <svg id="spark-calls" class="spark"></svg>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="em">📊</span><span data-i18n="chart.daily">มูลค่าที่ใช้ไปในแต่ละวัน</span></h2>
+      <p class="hint" data-i18n="chart.daily.hint">แท่งสูง = วันที่ใช้หนัก · ชี้ที่แท่งเพื่อดูรายละเอียด</p>
+      <div class="chart-scroll"><svg id="chart-daily" class="chart"></svg></div>
+      <div class="muted-line" id="daily-peak">—</div>
+    </div>
+
+    <div class="card">
+      <h2><span class="em">🕒</span><span data-i18n="chart.when">ทำงานตอนไหนบ้าง</span></h2>
+      <p class="hint" data-i18n="chart.when.hint">แต่ละช่องคือ 1 ชั่วโมง · ยิ่งเข้ม = ยิ่งใช้หนัก · ชี้เพื่อดูค่า</p>
+      <div class="heat" id="heatmap"></div>
+      <div class="heat-scale">
+        <span class="band-key"><i style="background:var(--band-night)"></i><span data-i18n="band.night">🌙 ดึก 00–08</span></span>
+        <span class="band-key"><i style="background:var(--band-work)"></i><span data-i18n="band.work">📁 เวลางาน 08–17</span></span>
+        <span class="band-key"><i style="background:var(--band-evening)"></i><span data-i18n="band.evening">🌇 เย็น-ค่ำ 17–24</span></span>
+        <span style="margin-left:14px" data-i18n="band.legend">สีเข้มขึ้น = ใช้หนักขึ้น 🔥 · แกนนอน 00:00 → 23:00</span>
+      </div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="card">
+        <h2><span class="em">🤖</span><span data-i18n="chart.models">ใช้โมเดลอะไรไปบ้าง</span></h2>
+        <p class="hint" data-i18n="chart.models.hint">เรียงตามมูลค่า · ตัวเลขคือสัดส่วนของทั้งช่วง</p>
+        <div id="model-bars"></div>
+      </div>
+      <div class="card">
+        <h2><span class="em">🧩</span><span data-i18n="chart.tokens">โทเคนแบ่งเป็นชนิดไหน</span></h2>
+        <p class="hint" data-i18n="chart.tokens.hint">อ่านแคชคิดแค่ 0.1 เท่าของ input ปกติ — จึงถูกกว่าที่ปริมาณดูเหมือน</p>
+        <div class="compbar" id="comp-bar"></div>
+        <div class="legend" id="comp-legend"></div>
+        <div class="table-wrap" style="margin-top:14px">
+          <table id="comp-table">
+            <thead><tr><th data-i18n="th.kind">ชนิด</th><th data-i18n="th.tokens">โทเคน</th><th data-i18n="th.share">สัดส่วน</th><th data-i18n="th.rate">เรตราคา</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2><span class="em">📁</span><span data-i18n="chart.projects">แยกตามโปรเจกต์</span></h2>
+      <p class="hint" data-i18n="chart.projects.hint">งานไหนกินโทเคนมากที่สุด</p>
+      <div class="table-wrap"><table id="project-table"></table></div>
+      <div class="muted-line" id="project-note"></div>
+    </div>
+  </section>
+
+  <!-- ══════════ DAILY LIST ══════════ -->
+  <section id="view-daily" class="stack hidden">
+    <div class="card">
+      <h2><span class="em">📅</span><span data-i18n="chart.summary">สรุปย่อรายวัน</span></h2>
+      <p class="hint" data-i18n="chart.summary.hint">เรียงจากวันล่าสุด · คลิกแถวเพื่อเจาะดูรายชั่วโมงของวันนั้น</p>
+      <div class="table-wrap"><table id="daily-table"></table></div>
+    </div>
+  </section>
+
+  <!-- ══════════ DAY DETAIL ══════════ -->
+  <section id="view-day" class="stack hidden">
+    <div class="day-nav">
+      <button class="ghost-btn" id="day-prev" type="button" data-i18n="day.prev">← ก่อนหน้า</button>
+      <div class="field"><select id="day-select"></select></div>
+      <button class="ghost-btn" id="day-next" type="button" data-i18n="day.next">ถัดไป →</button>
+    </div>
+
+    <div class="kpis">
+      <div class="card kpi"><div class="label"><span class="em">💰</span><span data-i18n="day.value">มูลค่าเทียบ API</span></div><div class="value" id="d-cost">—</div><div class="foot" id="d-cost-foot">—</div></div>
+      <div class="card kpi"><div class="label"><span class="em">🔢</span><span data-i18n="day.tokens">โทเคนรวม</span></div><div class="value" id="d-tokens">—</div><div class="foot" id="d-tokens-foot">—</div></div>
+      <div class="card kpi"><div class="label"><span class="em">💬</span><span data-i18n="day.requests">request</span></div><div class="value" id="d-calls">—</div><div class="foot" data-i18n="day.allday">ทั้งวัน</div></div>
+      <div class="card kpi"><div class="label"><span class="em">🔥</span><span data-i18n="day.peak">ชั่วโมงที่หนักสุด</span></div><div class="value" id="d-peak">—</div><div class="foot" id="d-peak-foot">—</div></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="em">⏰</span><span data-i18n="day.byhour">กระจายตามชั่วโมง</span></h2>
+      <p class="hint" data-i18n="day.byhour.hint">เวลาท้องถิ่น · ชี้ที่แท่งเพื่อดูค่า</p>
+      <div class="chart-scroll"><svg id="chart-hours" class="chart"></svg></div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="card">
+        <h2><span class="em">🤖</span><span data-i18n="day.models">โมเดลที่ใช้ในวันนี้</span></h2>
+        <p class="hint" data-i18n="sorted.byvalue">เรียงตามมูลค่า</p>
+        <div id="day-model-bars"></div>
+      </div>
+      <div class="card">
+        <h2><span class="em">📁</span><span data-i18n="day.projects">โปรเจกต์ที่ทำในวันนี้</span></h2>
+        <p class="hint" data-i18n="sorted.byvalue">เรียงตามมูลค่า</p>
+        <div class="table-wrap"><table id="day-project-table"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ BILLING CYCLES ══════════ -->
+  <!-- Its own tab rather than sitting above every view: choosing which cycle to look at is a global
+       control and stays in the header card, but ADDING and EDITING invoices is occasional work that
+       does not belong in the way of the daily reading. -->
+  <section id="view-cycles" class="stack hidden">
+    <div class="card">
+      <h2><span class="em">🧾</span><span data-i18n="cyc.title">จัดการรอบบิล</span></h2>
+      <p class="hint" data-i18n="cyc.hint">ใส่ทีละรอบแล้วกดบันทึก · เว้นวันสิ้นสุดว่าง = รอบยังไม่จบ นับถึงวันนี้ · เลือกรอบที่จะดูได้จากเมนูด้านบนสุด</p>
+      <div class="cycle-form">
+        <input type="date" id="cyc-start" data-i18n-aria="cyc.start.aria" aria-label="วันเริ่มรอบ">
+        <span class="cycle-dash">→</span>
+        <input type="date" id="cyc-end" data-i18n-aria="cyc.end.aria" aria-label="วันสิ้นสุดรอบ (เว้นว่าง = ยังไม่จบ)">
+        <input type="number" id="cyc-usd" min="0" step="0.01" placeholder="USD" data-i18n-aria="cyc.usd.aria" aria-label="ยอดเงิน USD">
+        <button type="button" id="cyc-save" data-i18n="cyc.save">💾 บันทึก</button>
+        <button type="button" id="cyc-cancel" class="hidden" data-i18n="cyc.cancel">ยกเลิก</button>
+        <div class="field fx-field">
+          <label for="fx" data-i18n="cyc.fx">💱 บาท / USD</label>
+          <input id="fx" type="number" min="1" step="0.25" value="35">
+        </div>
+      </div>
+      <div id="cyc-msg" class="cycle-msg"></div>
+      <div id="cycle-table"></div>
+    </div>
+  </section>
+
+  <p class="muted-line" id="footer-note"></p>
+</div>
+
+<div id="tip" role="tooltip"></div>
+
+<script>
+const DATA = /*__USAGE_DATA__*/null;
+
+/* ───────────────────────── helpers ───────────────────────── */
+const $ = (id) => document.getElementById(id);
+const SERIES = ['--series-1', '--series-2', '--series-3'];
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+function compact(n) {
+  const a = Math.abs(n);
+  if (a >= 1e12) return (n / 1e12).toFixed(a >= 1e13 ? 0 : 1) + 'T';
+  if (a >= 1e9)  return (n / 1e9 ).toFixed(a >= 1e10 ? 0 : 1) + 'B';
+  if (a >= 1e6)  return (n / 1e6 ).toFixed(a >= 1e7  ? 0 : 1) + 'M';
+  if (a >= 1e3)  return (n / 1e3 ).toFixed(a >= 1e4  ? 0 : 1) + 'K';
+  return String(Math.round(n));
+}
+const money = (usd) => '$' + usd.toLocaleString('en-US', { maximumFractionDigits: usd < 100 ? 2 : 0 });
+const baht  = (usd) => '฿' + Math.round(usd * fx()).toLocaleString('en-US');
+const full  = (n) => Math.round(n).toLocaleString('en-US');
+const pct   = (part, whole) => whole ? (part / whole * 100) : 0;
+
+/* ───────────────────────── language ─────────────────────────
+   The dashboard was Thai-only. Everything a reader sees now comes from this table, so a second
+   language is a column rather than a fork of the page.
+
+   Two rules that keep it honest:
+   - A key with no English entry falls back to the Thai string rather than rendering the key name.
+     A missing translation should look unfinished, not broken.
+   - Dates go through fmtDate/fmtMonth, not a hardcoded month table. Thai keeps its own short month
+     names and Buddhist-era-style two-digit year; English gets the same shape in Latin.            */
+
+const I18N = {
+  th: {
+    'title': 'การใช้งาน Claude',
+    'theme': 'โหมดสว่าง / มืด',
+    'cycle': '🧾 รอบบิล',
+    'cycle.aria': 'เลือกรอบบิลที่จะดู',
+    'tab.overview': '📈 ภาพรวม',
+    'tab.daily': '🗓 รายวัน',
+    'tab.day': '🔍 เจาะรายวัน',
+    'tab.cycles': '🧾 รอบบิล',
+    'lang': 'ไทย / EN',
+
+    'hero.multiple': 'เดือนนี้คุ้มกี่เท่า',
+    'hero.paid': 'จ่ายค่าแพลน',
+    'hero.value': 'มูลค่าที่ได้กลับมา',
+    'kpi.apivalue': 'มูลค่าถ้าจ่ายแบบ API',
+    'kpi.paid': 'ค่าแพลนที่จ่ายจริง',
+    'kpi.perbaht': 'จำนวนโทเคนต่อราคา 1 บาท',
+    'kpi.perbaht.foot': 'รวมทุกชนิดโทเคน',
+    'kpi.requests': 'จำนวน Request',
+
+    'chart.daily': 'มูลค่าที่ใช้ไปในแต่ละวัน',
+    'chart.daily.hint': 'แท่งสูง = วันที่ใช้หนัก · ชี้ที่แท่งเพื่อดูรายละเอียด',
+    'chart.when': 'ทำงานตอนไหนบ้าง',
+    'chart.when.hint': 'แต่ละช่องคือ 1 ชั่วโมง · ยิ่งเข้ม = ยิ่งใช้หนัก · ชี้เพื่อดูค่า',
+    'band.night': '🌙 ดึก 00–08',
+    'band.work': '📁 เวลางาน 08–17',
+    'band.evening': '🌇 เย็น-ค่ำ 17–24',
+    'band.legend': 'สีเข้มขึ้น = ใช้หนักขึ้น 🔥 · แกนนอน 00:00 → 23:00',
+    'band.night.short': 'ดึก',
+    'band.work.short': 'เวลางาน',
+    'band.evening.short': 'เย็น-ค่ำ',
+    'chart.models': 'ใช้โมเดลอะไรไปบ้าง',
+    'chart.models.hint': 'เรียงตามมูลค่า · ตัวเลขคือสัดส่วนของทั้งช่วง',
+    'chart.tokens': 'โทเคนแบ่งเป็นชนิดไหน',
+    'chart.tokens.hint': 'อ่านแคชคิดแค่ 0.1 เท่าของ input ปกติ — จึงถูกกว่าที่ปริมาณดูเหมือน',
+    'chart.projects': 'แยกตามโปรเจกต์',
+    'chart.projects.hint': 'งานไหนกินโทเคนมากที่สุด',
+    'chart.summary': 'สรุปย่อรายวัน',
+    'chart.summary.hint': 'เรียงจากวันล่าสุด · คลิกแถวเพื่อเจาะดูรายชั่วโมงของวันนั้น',
+
+    'th.kind': 'ชนิด',
+    'th.tokens': 'โทเคน',
+    'th.share': 'สัดส่วน',
+    'th.rate': 'เรตราคา',
+    'tok.cacheread': 'อ่านจากแคช',
+    'tok.cachewrite': 'เขียนแคช',
+    'tok.out': 'ข้อความขาออก (Output)',
+    'tok.in': 'อินพุตใหม่ (Uncached)',
+
+    'day.prev': '← ก่อนหน้า',
+    'day.next': 'ถัดไป →',
+    'day.value': 'มูลค่าเทียบ API',
+    'day.tokens': 'โทเคนรวม',
+    'day.requests': 'request',
+    'day.allday': 'ทั้งวัน',
+    'day.peak': 'ชั่วโมงที่หนักสุด',
+    'day.byhour': 'กระจายตามชั่วโมง',
+    'day.byhour.hint': 'เวลาท้องถิ่น · ชี้ที่แท่งเพื่อดูค่า',
+    'day.models': 'โมเดลที่ใช้ในวันนี้',
+    'day.projects': 'โปรเจกต์ที่ทำในวันนี้',
+    'sorted.byvalue': 'เรียงตามมูลค่า',
+
+    'cyc.title': 'จัดการรอบบิล',
+    'cyc.hint': 'ใส่ทีละรอบแล้วกดบันทึก · เว้นวันสิ้นสุดว่าง = รอบยังไม่จบ นับถึงวันนี้ · เลือกรอบที่จะดูได้จากเมนูด้านบนสุด',
+    'cyc.start.aria': 'วันเริ่มรอบ',
+    'cyc.end.aria': 'วันสิ้นสุดรอบ (เว้นว่าง = ยังไม่จบ)',
+    'cyc.usd.aria': 'ยอดเงิน USD',
+    'cyc.save': '💾 บันทึก',
+    'cyc.save.edit': '💾 บันทึกการแก้ไข',
+    'cyc.cancel': 'ยกเลิก',
+    'cyc.fx': '💱 บาท / USD',
+    'cyc.th.span': 'ช่วงรอบ',
+    'cyc.th.paid': 'จ่ายจริง',
+    'cyc.th.value': 'มูลค่าที่ใช้',
+    'cyc.th.multiple': 'คุ้มกี่เท่า',
+    'cyc.th.days': 'วันที่ใช้',
+    'cyc.th.calls': 'ครั้ง',
+    'cyc.edit': 'แก้ไขรอบนี้',
+    'cyc.del': 'ลบรอบนี้',
+    'cyc.running': '(ยังไม่จบ)',
+    'cyc.notended': 'ยังไม่จบ',
+    'cyc.alldays': '— ทุกวันที่มีข้อมูล —',
+
+    'msg.needstart': '⚠️ ต้องใส่วันเริ่มรอบก่อนนะคะ',
+    'msg.endbefore': '⚠️ วันสิ้นสุดอยู่ก่อนวันเริ่ม — ตรวจดูอีกทีนะคะ',
+    'msg.needamount': '⚠️ ใส่ยอดเงินของรอบนี้ด้วยนะคะ',
+    'msg.saved': '✅ บันทึกแล้ว',
+    'msg.savedbut': '⚠️ บันทึกแล้ว แต่มีจุดต้องดู:<br>',
+    'msg.editing': 'กำลังแก้รอบ {0} — แก้แล้วกดบันทึก หรือกดลบเพื่อเอาออก',
+    'msg.deleted': 'ลบรอบ {0} แล้ว',
+    'err.endbefore': 'รอบ {0}: วันสิ้นสุดอยู่ก่อนวันเริ่ม',
+    'err.overlap': 'รอบ {0} กับ {1} ทับกัน — วันที่ซ้อนจะถูกนับสองครั้ง',
+    'err.noend': 'รอบ {0} ไม่มีวันสิ้นสุด แต่มีรอบถัดไปแล้ว',
+
+    'sum.scoped': 'ทั้งหน้ากำลังแสดงเฉพาะรอบนี้ · {0} วัน',
+    'sum.allDays': 'กำลังแสดงทุกวันที่มีข้อมูล · {0} วัน',
+    'hero.sentence': '{0} คุณใช้งานคิดเป็นมูลค่า <b>{1}</b> ถ้าจ่ายราคา API แต่จ่ายจริงแค่ <b>{2}</b> — ได้มูลค่ากลับมา <b>{3} เท่า</b> จาก {4} วันที่มีการใช้งาน{5}',
+    'hero.cycleopen': ' (รอบนี้ยังไม่จบ)',
+    'hero.needcycle': 'ใส่ยอดเงินของรอบล่าสุดเพื่อคำนวณความคุ้ม',
+    'hero.needplan': 'กรอกราคาแพลนด้านล่างเพื่อคำนวณความคุ้ม',
+    'foot.invoice': 'ยอดในใบเสร็จรอบนี้',
+    'foot.nocycle': 'ยังไม่ได้ใส่รอบบิล',
+    'foot.avgcalls': 'เฉลี่ย {0} ครั้ง/วัน',
+    'peak.sentence': 'วันที่หนักที่สุดของเดือนคือ {0} — {1} จาก {2} request (โมเดลหลัก {3}) · คลิกแท่งเพื่อเจาะดูรายชั่วโมง',
+    'proj.showing': 'แสดง {0} อันดับแรก · อีก {1} โปรเจกต์รวมกัน {2} ({3}%)',
+    'proj.all': 'ทั้งหมด {0} โปรเจกต์',
+    'day.tokfoot': 'output {0} · อ่านแคช {1}',
+    'range.line': '{0} – {1} · {2} วัน · อัปเดต {3}',
+    'range.none': 'ยังไม่มีข้อมูล',
+    'note.value': 'ตัวเลขค่าใช้จ่ายทั้งหมดคือ <b>มูลค่าเทียบราคา API</b> ไม่ใช่เงินที่ถูกเรียกเก็บ — บนแพลนรายเดือนคุณจ่ายค่าแพลนคงที่',
+    'note.unpriced': ' · ไม่มีราคาสำหรับ {0} จึงนับเป็น request แต่ไม่คิดมูลค่า',
+    'label.value': 'มูลค่า',
+    'label.baht': 'เป็นเงินบาท',
+    'label.tokens': 'โทเคนรวม',
+    'label.model': 'โมเดลหลัก',
+    'label.requests': 'request',
+    'label.other': 'อื่น ๆ ({0})',
+    'th.day': 'วัน',
+    'th.project': 'โปรเจกต์',
+    'th.output': 'output',
+    'th.mainmodel': 'โมเดลหลัก',
+    'unit.tokens': 'โทเคน',
+    'unit.times': 'ครั้ง',
+  },
+  en: {
+    /* header + tabs */
+    'title':            'Claude usage',
+    'theme':            'Light / dark',
+    'cycle':            '🧾 Billing cycle',
+    'cycle.aria':       'choose which billing cycle to view',
+    'tab.overview':     '📈 Overview',
+    'tab.daily':        '🗓 Daily',
+    'tab.day':          '🔍 One day',
+    'tab.cycles':       '🧾 Cycles',
+    'lang':             'ไทย / EN',
+
+    /* overview hero */
+    'hero.multiple':    'value returned this period',
+    'hero.paid':        'plan price paid',
+    'hero.value':       'value received',
+    'kpi.apivalue':     'value at API prices',
+    'kpi.paid':         'plan price actually paid',
+    'kpi.perbaht':      'tokens per baht',
+    'kpi.perbaht.foot': 'all token types',
+    'kpi.requests':     'requests',
+
+    /* charts */
+    'chart.daily':      'value used per day',
+    'chart.daily.hint': 'a taller bar is a heavier day · hover for detail',
+    'chart.when':       'when the work happened',
+    'chart.when.hint':  'one cell per hour · darker is heavier · hover for the value',
+    'band.night':       '🌙 night 00–08',
+    'band.work':        '📁 work hours 08–17',
+    'band.evening':     '🌇 evening 17–24',
+    'band.legend':      'darker means heavier 🔥 · left to right 00:00 → 23:00',
+    'band.night.short': 'night',
+    'band.work.short':  'work hours',
+    'band.evening.short': 'evening',
+    'chart.models':     'which models were used',
+    'chart.models.hint':'ordered by value · the figure is the share of the period',
+    'chart.tokens':     'what kind of tokens',
+    'chart.tokens.hint':'a cache read bills at 0.1× ordinary input — cheaper than the volume looks',
+    'chart.projects':   'by project',
+    'chart.projects.hint':'which work consumed the most',
+    'chart.summary':    'day by day',
+    'chart.summary.hint':'newest first · click a row to open that day hour by hour',
+
+    /* token table */
+    'th.kind':          'kind',
+    'th.tokens':        'tokens',
+    'th.share':         'share',
+    'th.rate':          'rate',
+    'tok.cacheread':    'cache read',
+    'tok.cachewrite':   'cache write',
+    'tok.out':          'output',
+    'tok.in':           'new input (uncached)',
+
+    /* day view */
+    'day.prev':         '← previous',
+    'day.next':         'next →',
+    'day.value':        'value at API prices',
+    'day.tokens':       'total tokens',
+    'day.requests':     'requests',
+    'day.allday':       'whole day',
+    'day.peak':         'busiest hour',
+    'day.byhour':       'spread across the hours',
+    'day.byhour.hint':  'local time · hover a bar for the value',
+    'day.models':       'models used that day',
+    'day.projects':     'projects worked on that day',
+    'sorted.byvalue':   'ordered by value',
+
+    /* cycles tab */
+    'cyc.title':        'billing cycles',
+    'cyc.hint':         'add one cycle at a time and save · leave the end date empty for a cycle still running · pick which one to view from the menu at the top',
+    'cyc.start.aria':   'cycle start date',
+    'cyc.end.aria':     'cycle end date (empty = still running)',
+    'cyc.usd.aria':     'amount in USD',
+    'cyc.save':         '💾 Save',
+    'cyc.save.edit':    '💾 Save changes',
+    'cyc.cancel':       'Cancel',
+    'cyc.fx':           '💱 baht / USD',
+    'cyc.th.span':      'period',
+    'cyc.th.paid':      'paid',
+    'cyc.th.value':     'value used',
+    'cyc.th.multiple':  'multiple',
+    'cyc.th.days':      'active days',
+    'cyc.th.calls':     'requests',
+    'cyc.edit':         'edit this cycle',
+    'cyc.del':          'remove this cycle',
+    'cyc.running':      '(still running)',
+    'cyc.notended':     'still running',
+    'cyc.alldays':      '— every day with data —',
+
+    /* messages */
+    'msg.needstart':    '⚠️ a start date is required',
+    'msg.endbefore':    '⚠️ the end date is before the start date — please check',
+    'msg.needamount':   '⚠️ enter the amount for this cycle',
+    'msg.saved':        '✅ Saved',
+    'msg.savedbut':     '⚠️ Saved, but worth a look:<br>',
+    'msg.editing':      'editing the cycle starting {0} — save when done, or delete to remove it',
+    'msg.deleted':      'removed the cycle starting {0}',
+    'err.endbefore':    'cycle {0}: the end date is before the start date',
+    'err.overlap':      'cycles {0} and {1} overlap — the shared days are counted twice',
+    'err.noend':        'cycle {0} has no end date but a later cycle already exists',
+
+    /* prose */
+    'sum.scoped':       'the whole page is showing this cycle only · {0} days',
+    'sum.allDays':      'showing every day with data · {0} days',
+    'hero.sentence':    '{0} you used <b>{1}</b> worth at API prices but paid <b>{2}</b> — <b>{3}×</b> the money back, across {4} active days{5}',
+    'hero.cycleopen':   ' (this cycle is still running)',
+    'hero.needcycle':   'enter the amount for the latest cycle to see the multiple',
+    'hero.needplan':    'enter your plan price below to see the multiple',
+    'foot.invoice':     'the amount on this cycle’s invoice',
+    'foot.nocycle':     'no billing cycle entered yet',
+    'foot.avgcalls':    '{0} requests per day on average',
+    'peak.sentence':    'the heaviest day was {0} — {1} from {2} requests (mostly {3}) · click a bar to open it hour by hour',
+    'proj.showing':     'showing the top {0} · the other {1} projects together come to {2} ({3}%)',
+    'proj.all':         'all {0} projects',
+    'day.tokfoot':      'output {0} · cache read {1}',
+    'range.line':       '{0} – {1} · {2} days · updated {3}',
+    'range.none':       'no data yet',
+    'note.value':       'every cost figure here is <b>value at API list prices</b>, not money billed — on a monthly plan you pay the plan price',
+    'note.unpriced':    ' · no price for {0}, so those count as requests but carry no value',
+    'label.value':      'value',
+    'label.baht':       'in baht',
+    'label.tokens':     'total tokens',
+    'label.model':      'main model',
+    'label.requests':   'requests',
+    'label.other':      'other ({0})',
+    'th.day':           'day',
+    'th.project':       'project',
+    'th.output':        'output',
+    'th.mainmodel':     'main model',
+    'unit.tokens':      'tokens',
+    'unit.times':       'times',
+  },
+};
+
+const MONTHS = {
+  th: ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'],
+  en: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+};
+
+/* `||` binds tighter than `?:`, so the stored value has to be checked on its own line. */
+let LANG = localStorage.getItem('sum.lang') || ((navigator.language || '').toLowerCase().startsWith('th') ? 'th' : 'en');
+
+/** Look up `key`, then substitute {0}, {1}, … with the remaining arguments. */
+function t(key, ...args) {
+  const table = I18N[LANG] || {};
+  let out = Object.prototype.hasOwnProperty.call(table, key) ? table[key] : (I18N.th[key] ?? key);
+  return out.replace(/\{(\d+)\}/g, (m, i) => (args[i] !== undefined ? String(args[i]) : m));
+}
+
+function fmtDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return LANG === 'th'
+    ? `${d} ${MONTHS.th[m - 1]} ${String(y).slice(2)}`
+    : `${d} ${MONTHS.en[m - 1]} ${String(y).slice(2)}`;
+}
+function fmtMonth(iso) {
+  const [y, m] = iso.split('-').map(Number);
+  return `${MONTHS[LANG][m - 1]} ${y}`;
+}
+/* Kept as the old names so every existing call site still reads naturally. */
+const thDate = fmtDate, thMonth = fmtMonth;
+
+/** Replace the text of every [data-i18n] element. Runs on load and on every language change. */
+function applyI18n() {
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  document.querySelectorAll('[data-i18n-aria]').forEach(el => {
+    el.setAttribute('aria-label', t(el.dataset.i18nAria));
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    el.setAttribute('title', t(el.dataset.i18nTitle));
+  });
+}
+
+function setLang(next) {
+  LANG = next;
+  try { localStorage.setItem('sum.lang', next); } catch (_) {}
+  applyI18n();
+  // Charts and tables bake their labels into generated markup, so swapping the language has to
+  // redraw them; applyI18n alone only reaches the static [data-i18n] elements.
+  if (typeof redrawAll === 'function') redrawAll();
+}
+
+const modelName = (id) => (DATA.display_names && DATA.display_names[id]) || id;
+const tokensOf  = (o) => o.in + o.out + o.cache_read + o.cache_write;
+
+/* ───────────────────────── settings & billing cycles ─────────────────────────
+   A billing period is what the money actually bought, and a calendar month is not one: with invoices
+   on Jul 21 ($20) and Aug 6 ($90.09), "August" holds the tail of one cycle and the head of another.
+   The fixed plan selector this replaced could not express that at all — one price for every month,
+   while the real price changed between them.
+
+   Cycles are the SOURCE OF TRUTH and are stored in localStorage, which survives regenerating
+   index.html — build_usage.py rewrites the file every 3 hours and localStorage is keyed by origin,
+   not by file contents, so entered invoices are not lost on rebuild. DATA.seed_cycles (inlined by
+   the aggregator from data/billing_cycles.json, when that file exists) is a durable fallback for a
+   fresh browser or a cleared store; localStorage always wins once anything has been entered here.
+
+   Every cycle is typed by hand, start AND end, both INCLUSIVE ("รอบนี้ถึงวันที่ X" is how a receipt
+   reads). Two auto-fill approaches were built and removed on 2026-08-11, both because they guess and
+   a wrong guess here looks exactly like a fact: inferring the end from the next invoice cannot
+   express a GAP (a skipped month silently stretches the previous cycle over usage nobody paid for),
+   and projecting invoices forward monthly cannot survive DRIFT (bills land on the 8th, or resume
+   mid-October). Inclusive ends make overlaps typable, so those are detected rather than quietly
+   double-counting a day into two invoices. */
+const STORE = 'sum-useage-clause.plan.v1';
+let settings = { fx: 35, cycles: [] };
+try { Object.assign(settings, JSON.parse(localStorage.getItem(STORE) || '{}')); } catch (_) {}
+if (!Array.isArray(settings.cycles) || !settings.cycles.length) {
+  settings.cycles = Array.isArray(DATA.seed_cycles) ? DATA.seed_cycles.slice() : [];
+}
+// Normalise + sort ascending once, here, so every reader downstream can assume the shape.
+settings.cycles = settings.cycles
+  .filter(c => c && c.start)
+  .map(c => ({ start: c.start, end: c.end || null, usd: Number(c.usd) || 0 }))
+  .sort((a, b) => a.start.localeCompare(b.start));
+
+const fx = () => Number($('fx').value) || 35;
+
+function saveSettings() {
+  settings.fx = fx();
+  try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch (_) {}
+}
+
+function cycleWarnings(list) {
+  const out = [];
+  list.forEach((c, i) => {
+    if (c.end && c.end < c.start) out.push(t('err.endbefore', fmtDate(c.start)));
+    const next = list[i + 1];
+    if (next && c.end && next.start <= c.end) {
+      out.push(t('err.overlap', fmtDate(c.start), fmtDate(next.start)));
+    }
+    if (next && !c.end) out.push(t('err.noend', fmtDate(c.start)));
+  });
+  return out;
+}
+
+/* Usage summed over the CLOSED range [start, end] for each cycle — both dates inclusive. Days carry
+   the aggregates already, so this is a filter and a fold: no re-pricing, and it agrees with every
+   other view by construction. */
+function computeCycles() {
+  const list = settings.cycles;
+  if (!list.length) return [];
+  const today = DATA.range && DATA.range.last ? DATA.range.last : null;
+  return list.map(c => {
+    const open = !c.end;                       // no end date typed = the cycle is still running
+    const within = allDays.filter(d => d.date >= c.start && (open || d.date <= c.end));
+    const cost = within.reduce((s, d) => s + d.cost, 0);
+    const calls = within.reduce((s, d) => s + d.calls, 0);
+    const tokens = within.reduce((s, d) => s + tokensOf(d), 0);
+    return {
+      start: c.start, end: c.end, usd: c.usd, cost, calls, tokens,
+      days: within.length,
+      current: open,
+      // An open cycle's ratio is partial by nature — labelled rather than hidden, since a
+      // half-finished cycle looking "less worth it" is expected, and knowing why beats smoothing it.
+      through: open ? today : c.end,
+      multiple: c.usd > 0 ? cost / c.usd : 0,
+    };
+  });
+}
+
+/* ───────────────────────── tooltip ───────────────────────── */
+const tip = $('tip');
+function showTip(evt, head, rows) {
+  tip.innerHTML = `<div class="t-head">${head}</div>` +
+    rows.map(([k, v]) => `<div class="t-row"><span>${k}</span><b>${v}</b></div>`).join('');
+  tip.style.opacity = '1';
+  moveTip(evt);
+}
+function moveTip(evt) {
+  const pad = 14, r = tip.getBoundingClientRect();
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  if (x + r.width  > innerWidth  - 8) x = evt.clientX - r.width  - pad;
+  if (y + r.height > innerHeight - 8) y = evt.clientY - r.height - pad;
+  tip.style.left = Math.max(8, x) + 'px';
+  tip.style.top  = Math.max(8, y) + 'px';
+}
+const hideTip = () => { tip.style.opacity = '0'; };
+
+/* ───────────────────────── column chart ─────────────────────────
+   One series, so no legend box — the card title already names what is plotted. Bars are
+   capped at 24px and rounded only at the data end; the baseline stays square. The hit
+   rectangle spans the whole band rather than the bar, so a near-zero day is still hoverable. */
+function columnChart(svg, items, opts = {}) {
+  // The viewBox is sized near the real card width so the browser scales it by roughly 1x.
+  // At a 560-wide box the 24px bar spec rendered as a ~48px slab — the marks were drawn to
+  // spec and then magnified out of it. padT is headroom for the peak's direct label, which
+  // otherwise has nowhere to sit but on top of the bar it is labelling.
+  const W = Math.max(880, items.length * (opts.minBand || 26));
+  const H = 248, padL = 56, padR = 14, padT = 28, padB = 36;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const max = Math.max(...items.map(d => d.value), 0.0001);
+  const ticks = niceTicks(max, 4);
+  const top = ticks[ticks.length - 1];
+  const band = plotW / items.length;
+  const barW = Math.min(24, Math.max(3, band - 6));
+  const y = (v) => padT + plotH - (v / top) * plotH;
+
+  // The id has to be re-declared on the replacement: outerHTML swaps the element out, so
+  // the caller's reference goes stale and every later re-render (theme toggle, plan edit,
+  // day change) re-finds the node by id. Omitting it silently loses every tooltip.
+  let s = `<svg id="${opts.id}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMinYMin meet" class="chart">`;
+  for (const t of ticks) {
+    s += `<line class="gridline" x1="${padL}" x2="${W - padR}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}"/>`;
+    s += `<text x="${padL - 8}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end">${opts.tick ? opts.tick(t) : compact(t)}</text>`;
+  }
+  s += `<line class="axisline" x1="${padL}" x2="${W - padR}" y1="${padT + plotH}" y2="${padT + plotH}"/>`;
+
+  items.forEach((d, i) => {
+    const cx = padL + band * i + band / 2;
+    const h = Math.max(d.value > 0 ? 2 : 0, (d.value / top) * plotH);
+    const yy = padT + plotH - h;
+    const r = Math.min(4, h / 2, barW / 2);
+    const isPeak = d.value === max && max > 0;
+    const fill = isPeak ? 'var(--series-1)' : 'color-mix(in srgb, var(--series-1) 55%, var(--surface))';
+    if (h > 0) {
+      s += `<path class="bar" d="M${(cx - barW / 2).toFixed(1)} ${(yy + h).toFixed(1)}`
+         + `V${(yy + r).toFixed(1)}a${r} ${r} 0 0 1 ${r} ${-r}`
+         + `h${(barW - 2 * r).toFixed(1)}a${r} ${r} 0 0 1 ${r} ${r}`
+         + `V${(yy + h).toFixed(1)}Z" fill="${fill}"/>`;
+    }
+    if (isPeak && opts.labelPeak !== false) {
+      s += `<text class="peak" x="${cx.toFixed(1)}" y="${(yy - 9).toFixed(1)}" text-anchor="middle">${opts.tick ? opts.tick(d.value) : compact(d.value)}</text>`;
+    }
+    if (opts.showLabel && opts.showLabel(i, items.length)) {
+      s += `<text x="${cx.toFixed(1)}" y="${H - 12}" text-anchor="middle">${d.label}</text>`;
+    }
+    s += `<rect class="hit" x="${(padL + band * i).toFixed(1)}" y="${padT}" width="${band.toFixed(1)}" height="${plotH}" data-i="${i}"/>`;
+  });
+  s += `</svg>`;
+  svg.outerHTML = s;
+
+  const node = document.getElementById(opts.id);
+  node.querySelectorAll('.hit').forEach((hit) => {
+    const d = items[Number(hit.dataset.i)];
+    hit.addEventListener('mousemove', (e) => showTip(e, d.tipHead, d.tipRows));
+    hit.addEventListener('mouseleave', hideTip);
+    if (opts.onClick) hit.addEventListener('click', () => opts.onClick(d));
+  });
+}
+
+/* The top tick must be >= the largest value, or the tallest bar renders past the plot and is
+   clipped by the viewBox — which is exactly what happened at $423 against a top tick of $400.
+   Candidate steps are tried smallest-first and the first one that fits the data in about
+   `count` bands wins, so the axis stays tight instead of jumping to the next round number and
+   leaving the chart half empty. */
+function niceTicks(max, count) {
+  const raw = (max || 1) / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw || 1)));
+  const candidates = [1, 2, 2.5, 5, 10].map(m => m * mag);
+  const step = candidates.find(s => Math.ceil(max / s) <= count + 1) || candidates[candidates.length - 1];
+  const top = Math.max(step, Math.ceil(max / step) * step);
+  const out = [];
+  for (let v = 0; v <= top + step * 1e-6; v += step) out.push(Number(v.toFixed(6)));
+  return out;
+}
+
+/* ───────────────────────── model bars ─────────────────────────
+   Rows carry a colour for identity (the same hue follows a model across every view) and are
+   direct-labelled with the value — which is also the documented relief for light-mode aqua
+   sitting under 3:1 against the surface. Past three models the tail folds into a neutral
+   "other" rather than taking a fourth hue. */
+function modelBars(container, models, totalCost) {
+  const rows = Object.entries(models)
+    .map(([id, v]) => ({ id, ...v }))
+    .sort((a, b) => b.cost - a.cost);
+  const head = rows.slice(0, 3);
+  const tail = rows.slice(3);
+  if (tail.length) {
+    head.push({
+      id: '__other__',
+      cost: tail.reduce((s, r) => s + r.cost, 0),
+      calls: tail.reduce((s, r) => s + r.calls, 0),
+      in: 0, out: tail.reduce((s, r) => s + r.out, 0),
+      cache_read: 0, cache_write: 0,
+      _names: tail.map(r => modelName(r.id)),
+    });
+  }
+  const max = Math.max(...head.map(r => r.cost), 0.0001);
+
+  container.innerHTML = head.map((r, i) => {
+    const color = r.id === '__other__' ? 'var(--neutral)' : `var(${SERIES[i]})`;
+    const name = r.id === '__other__' ? t('label.other', r._names.length) : modelName(r.id);
+    const share = pct(r.cost, totalCost).toFixed(1);
+    return `
+      <div style="margin-bottom:13px">
+        <div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;margin-bottom:5px">
+          <span style="display:inline-flex;align-items:center;gap:7px;color:var(--ink)">
+            <i style="width:9px;height:9px;border-radius:2px;background:${color};display:inline-block"></i>${name}
+          </span>
+          <span style="color:var(--ink-2);font-variant-numeric:tabular-nums">${money(r.cost)} · ${share}%</span>
+        </div>
+        <div style="height:9px;border-radius:5px;background:color-mix(in srgb, var(--ink) 6%, transparent)">
+          <div style="height:100%;border-radius:5px;background:${color};width:${(r.cost / max * 100).toFixed(1)}%"></div>
+        </div>
+        <div style="font-size:11.5px;color:var(--ink-muted);margin-top:4px">
+          ${full(r.calls)} ${t('label.requests')} · output ${compact(r.out)} ${t('unit.tokens')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+/* Each card renders inside its own try/catch. This is not defensive habit — it is a fix for
+   an observed failure: a chart that threw *after* injecting its SVG left the page showing a
+   correct graph above three cards that were silently, permanently empty. One card failing
+   must cost that card only, and must say so in the console instead of vanishing. */
+function safe(label, fn) {
+  try {
+    fn();
+  } catch (err) {
+    console.error(`[${label}]`, err);
+  }
+}
+
+/* Sparkline for a stat tile: 12 points, de-emphasised line, current period as an end dot.
+   No axis and no labels — it carries shape, and the tile's own value carries the number. */
+function sparkline(id, values, accent) {
+  const el = $(id);
+  if (!el || !values.length) return;
+  const W = 200, H = 30, pad = 3;
+  const max = Math.max(...values), min = Math.min(...values);
+  const span = (max - min) || 1;
+  const x = (i) => pad + (i / Math.max(values.length - 1, 1)) * (W - pad * 2);
+  const y = (v) => H - pad - ((v - min) / span) * (H - pad * 2);
+  const d = values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const lastX = x(values.length - 1), lastY = y(values[values.length - 1]);
+  el.outerHTML =
+    `<svg id="${id}" class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`
+    + `<path d="${d}" fill="none" stroke="${accent || 'var(--series-1)'}" stroke-width="1.6"`
+    + ` stroke-linejoin="round" stroke-linecap="round" opacity="0.55"/>`
+    + `<circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="2.8" fill="${accent || 'var(--series-1)'}"`
+    + ` stroke="var(--surface)" stroke-width="2"/></svg>`;
+}
+
+/* Day x hour heatmap — a grid of magnitude, so one hue light-to-dark, never a rainbow. It is
+   the only view that answers "when do I actually work" in one glance; the daily columns show
+   how much, this shows when. Cells below the top step still clear the surface, so an active
+   hour never disappears into the background. */
+function heatmap(containerId, dayList) {
+  const el = $(containerId);
+  if (!el) return;
+  const peak = Math.max(...dayList.flatMap(d => d.hours), 0.0001);
+  // Composite encoding: hue carries WHICH part of the day, lightness carries HOW MUCH. Both
+  // channels stay readable because the three hues were validated all-pairs in both themes — the
+  // originally-requested purple/blue pair was not (normal-vision ΔE 9.8, under the 15 floor).
+  const band = (h) => h < 8 ? ['var(--band-night)', t('band.night.short')]
+                  : h < 17 ? ['var(--band-work)', t('band.work.short')]
+                           : ['var(--band-evening)', t('band.evening.short')];
+  const rows = dayList.map(d => {
+    const cells = d.hours.map((v, h) => {
+      // Named `t` before the translate function took that name two lines up; lexical scoping
+      // kept band() correct either way, but the reader should not have to work that out.
+      const intensity = v / peak;
+      const [hue, bandName] = band(h);
+      const alpha = v <= 0 ? 0 : 0.16 + Math.pow(intensity, 0.45) * 0.84;
+      const bg = v <= 0
+        ? 'color-mix(in srgb, var(--ink) 3.5%, transparent)'
+        : `color-mix(in srgb, ${hue} ${(alpha * 100).toFixed(0)}%, var(--surface))`;
+      return `<div class="heat-cell" style="background:${bg}"
+        data-tip="${thDate(d.date)} · ${String(h).padStart(2, '0')}:00 (${bandName})"
+        data-v="${money(v)}" data-c="${full(d.hour_calls[h])}"></div>`;
+    }).join('');
+    return `<div class="heat-label">${thDate(d.date).replace(/ \d{2}$/, '')}</div><div class="heat-row">${cells}</div>`;
+  }).join('');
+  el.innerHTML = rows;
+  el.querySelectorAll('.heat-cell').forEach(cell => {
+    cell.addEventListener('mousemove', (e) => showTip(e, cell.dataset.tip, [
+      [t('label.value'), cell.dataset.v], [t('label.requests'), cell.dataset.c],
+    ]));
+    cell.addEventListener('mouseleave', hideTip);
+  });
+}
+
+/* Re-scope every view to the chosen cycle. One function so no view can drift out of sync: `days` is
+   rebuilt, the day picker is refilled (its old selection may no longer be in range), and all three
+   tabs redraw from the same list. */
+/* Roll the SCOPED days up into the same shapes DATA carries for the whole range. Without this the
+   model breakdown, token composition and project table kept reading DATA.models / DATA.totals /
+   DATA.projects — all-time rollups baked in by the aggregator — so picking a cycle changed the daily
+   chart and heatmap while those three cards silently kept showing every day on record. Same days in,
+   same numbers out, by construction. */
+function scopedRollup() {
+  const blank = () => ({ cost: 0, calls: 0, in: 0, out: 0, cache_read: 0, cache_write: 0 });
+  const add = (dst, src) => { for (const k of Object.keys(blank())) dst[k] += (src[k] || 0); };
+  const totals = blank(), models = {}, projects = {};
+  for (const d of days) {
+    add(totals, d);
+    for (const [name, v] of Object.entries(d.models || {})) add(models[name] ||= blank(), v);
+    for (const [name, v] of Object.entries(d.projects || {})) add(projects[name] ||= blank(), v);
+  }
+  return { totals, models, projects };
+}
+
+function applyCycleScope() {
+  days = scopedDays();
+  if (!days.length) days = allDays;          // never leave the page with nothing to draw
+  if (!days.some(d => d.date === selectedDay)) selectedDay = days[days.length - 1].date;
+  $('day-select').innerHTML = days.slice().reverse()
+    .map(d => `<option value="${d.date}">${thDate(d.date)}</option>`).join('');
+  $('day-select').value = selectedDay;
+  const r = cycleRange(selectedCycle);
+  $('cycle-scope-note').textContent = r
+    ? t('sum.scoped', days.length)
+    : t('sum.allDays', days.length);
+  safe('scope-overview', renderOverview);
+  safe('scope-daily', renderDaily);
+  safe('scope-day', renderDay);
+}
+
+function renderCycleSelect() {
+  const sel = $('cycle-select');
+  if (!sel) return;
+  const opts = settings.cycles.map((c, i) => {
+    const end = c.end ? fmtDate(c.end) : t('cyc.notended');
+    return `<option value="${i}">${thDate(c.start)} – ${end} · ${money(c.usd)}</option>`;
+  }).reverse();                              // newest first, so the default sits at the top
+  sel.innerHTML = opts.join('') + '<option value="">' + t('cyc.alldays') + '</option>';
+  sel.value = selectedCycle >= 0 ? String(selectedCycle) : '';
+}
+
+/* ───────────────────────── billing-cycle UI ─────────────────────────
+   One form plus a table of saved cycles, rather than a column of live-editing rows. The old shape
+   left every cycle as a set of floating inputs, so the saved data and the thing being typed looked
+   identical and there was no moment where a cycle was "committed". Now: fill the form, press save,
+   the form clears and the cycle appears in the table. Editing pulls a row back into the same form,
+   which is also the only way to change one — so there is exactly one place to type. */
+let editingIndex = -1;   // -1 = adding a new cycle; otherwise the index being edited
+
+function setCycleMsg(text, kind) {
+  const el = $('cyc-msg');
+  el.className = 'cycle-msg' + (kind ? ' ' + kind : '');
+  el.innerHTML = text || '';
+}
+
+function clearCycleForm() {
+  $('cyc-start').value = '';
+  $('cyc-end').value = '';
+  $('cyc-usd').value = '';
+  editingIndex = -1;
+  $('cyc-cancel').classList.add('hidden');
+  $('cyc-save').textContent = t('cyc.save');
+  renderCycles();
+}
+
+function saveCycleFromForm() {
+  const start = $('cyc-start').value;
+  const end = $('cyc-end').value || null;
+  const usd = Number($('cyc-usd').value) || 0;
+
+  // Refuse rather than store something that would quietly produce a wrong ratio. The backwards-range
+  // case is not hypothetical: a 21/08 typed for 21/07 is what the owner hit first time out.
+  if (!start) { setCycleMsg(t('msg.needstart'), 'warn'); return; }
+  if (end && end < start) { setCycleMsg(t('msg.endbefore'), 'warn'); return; }
+  if (usd <= 0) { setCycleMsg(t('msg.needamount'), 'warn'); return; }
+
+  const next = settings.cycles.slice();
+  if (editingIndex >= 0) next.splice(editingIndex, 1);      // editing = replace, not duplicate
+  next.push({ start, end, usd });
+  next.sort((a, b) => a.start.localeCompare(b.start));
+
+  const problems = cycleWarnings(next);
+  settings.cycles = next;
+  saveSettings();
+  clearCycleForm();
+  setCycleMsg(problems.length
+    ? t('msg.savedbut') + problems.join('<br>')
+    : t('msg.saved'), problems.length ? 'warn' : 'ok');
+  // Jump to the cycle just saved — it is the one being worked on.
+  selectedCycle = settings.cycles.findIndex(c => c.start === start);
+  renderCycleSelect();
+  applyCycleScope();
+}
+
+function editCycle(i) {
+  const c = settings.cycles[i];
+  if (!c) return;
+  $('cyc-start').value = c.start;
+  $('cyc-end').value = c.end || '';
+  $('cyc-usd').value = c.usd || '';
+  editingIndex = i;
+  $('cyc-cancel').classList.remove('hidden');
+  $('cyc-save').textContent = t('cyc.save.edit');
+  setCycleMsg(t('msg.editing', fmtDate(c.start)), 'ok');
+  renderCycles();
+  $('cyc-start').focus();
+}
+
+function deleteCycle(i) {
+  const c = settings.cycles[i];
+  if (!c) return;
+  settings.cycles = settings.cycles.filter((_, n) => n !== i);
+  saveSettings();
+  clearCycleForm();
+  setCycleMsg(t('msg.deleted', fmtDate(c.start)), 'ok');
+  selectedCycle = settings.cycles.length ? settings.cycles.length - 1 : -1;
+  renderCycleSelect();
+  applyCycleScope();
+}
+
+/* The per-cycle table — the view a calendar-month rollup could not give: each invoice against the
+   usage it actually paid for, so a plan change reads as two honest rows instead of one blended
+   average. Newest first, since the bill being checked is almost always the latest. */
+function renderCycles() {
+  const host = $('cycle-table');
+  if (!host) return;
+  const cycles = computeCycles();
+  if (!cycles.length) { host.innerHTML = ''; return; }
+
+  // computeCycles preserves settings.cycles order (ascending), so the original index is derivable
+  // for the row buttons even though the table renders in reverse.
+  const rows = cycles.map((c, i) => ({ c, i })).reverse().map(({ c, i }) => {
+    const span = c.through && c.through !== c.start
+      ? `${thDate(c.start)} – ${thDate(c.through)}` : thDate(c.start);
+    return `<tr class="${c.current ? 'current' : ''}${i === editingIndex ? ' editing' : ''}">
+      <td>${span}${c.current ? ' <span class="muted-line">' + t('cyc.running') + '</span>' : ''}</td>
+      <td>${money(c.usd)}</td>
+      <td>${money(c.cost)}</td>
+      <td>${c.usd > 0 ? c.multiple.toFixed(1) + '×' : '—'}</td>
+      <td>${full(c.days)}</td>
+      <td>${full(c.calls)}</td>
+      <td>
+        <button type="button" class="row-btn" data-edit="${i}" title="${t('cyc.edit')}">✏️</button>
+        <button type="button" class="row-btn" data-del="${i}" title="${t('cyc.del')}">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  host.innerHTML = `<div class="cycle-scroll"><table class="cycle-table">
+    <thead><tr><th>${t('cyc.th.span')}</th><th>${t('cyc.th.paid')}</th><th>${t('cyc.th.value')}</th>
+      <th>${t('cyc.th.multiple')}</th><th>${t('cyc.th.days')}</th><th>${t('cyc.th.calls')}</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+
+  host.querySelectorAll('[data-edit]').forEach(b =>
+    b.addEventListener('click', () => editCycle(Number(b.dataset.edit))));
+  host.querySelectorAll('[data-del]').forEach(b =>
+    b.addEventListener('click', () => deleteCycle(Number(b.dataset.del))));
+}
+
+/* ───────────────────────── views ───────────────────────── */
+const allDays = DATA.days.slice();
+
+/* Which billing cycle the whole dashboard is scoped to. Default is the newest, because that is the
+   bill being asked about; '' means every day on record. The owner's ask (2026-08-11) was that
+   choosing a cycle changes the WHOLE dashboard, not only the headline — so `days` below is the
+   scoped list and every view reads it, which keeps the daily columns, heatmap, day picker and KPIs
+   describing the same period by construction rather than by remembering to filter each one. */
+let selectedCycle = settings.cycles.length ? settings.cycles.length - 1 : -1;
+
+function cycleRange(i) {
+  const c = settings.cycles[i];
+  if (!c) return null;
+  return { start: c.start, end: c.end || (DATA.range && DATA.range.last) || '9999-12-31' };
+}
+
+function scopedDays() {
+  const r = cycleRange(selectedCycle);
+  if (!r) return allDays;
+  return allDays.filter(d => d.date >= r.start && d.date <= r.end);
+}
+
+let days = scopedDays();
+const months = DATA.months.slice();
+const latestMonth = months[months.length - 1];
+let selectedDay = days.length ? days[days.length - 1].date : null;
+
+function renderOverview() {
+  // Prefer the real billing cycle over the calendar month whenever invoices have been entered —
+  // that is the period the money actually bought. Falls back to the month + flat plan price when
+  // the list is empty, so the page works the same as before until someone fills it in.
+  const cycles = computeCycles();
+  // The SELECTED cycle, not simply the newest — the selector is what scopes the page now.
+  const cur = (selectedCycle >= 0 && cycles[selectedCycle]) ? cycles[selectedCycle] : null;
+  const m = latestMonth;
+  const paidUsd = cur ? cur.usd : planUsd();
+  const valueUsd = cur ? cur.cost : m.cost;
+  const activeDays = cur ? cur.days : m.days;
+  const periodLabel = cur
+    ? `${fmtDate(cur.start)}${cur.through && cur.through !== cur.start ? ' – ' + fmtDate(cur.through) : ''}`
+    : fmtMonth(m.month);
+  const multiple = paidUsd > 0 ? valueUsd / paidUsd : 0;
+
+  $('hero-multiple').textContent = paidUsd > 0 ? multiple.toFixed(1) + '×' : '—';
+  $('hero-note').innerHTML = paidUsd > 0
+    ? t('hero.sentence', periodLabel, money(valueUsd), money(paidUsd), multiple.toFixed(1), activeDays,
+        cur && cur.current ? t('hero.cycleopen') : '')
+    : (cur ? t('hero.needcycle') : t('hero.needplan'));
+
+  $('kpi-value').innerHTML = money(valueUsd) + `<span class="unit">${baht(valueUsd)}</span>`;
+  $('kpi-value-foot').textContent = periodLabel;
+  $('kpi-paid').innerHTML = money(paidUsd) + `<span class="unit">${baht(paidUsd)}</span>`;
+  $('kpi-paid-foot').textContent = cur ? t('foot.invoice') : t('foot.nocycle');
+
+  const tokens = cur ? cur.tokens : tokensOf(m);
+  const paidBaht = paidUsd * fx();
+  $('kpi-perbaht').textContent = paidBaht > 0 ? compact(tokens / paidBaht) : '—';
+  const calls = cur ? cur.calls : m.calls;
+  $('kpi-calls').textContent = full(calls);
+  $('kpi-calls-foot').textContent = t('foot.avgcalls', full(calls / Math.max(activeDays, 1)));
+
+  // Both bars share one scale, so the paid bar is genuinely 1/16th of the value bar rather
+  // than a scaled-to-fit decoration. A 3px floor keeps it visible when the ratio gets extreme.
+  const widest = Math.max(valueUsd, paidUsd, 0.0001);
+  $('cmp-paid').textContent = `${money(paidUsd)} - ${baht(paidUsd)}`;
+  $('cmp-value').textContent = `${money(valueUsd)} - ${baht(valueUsd)}`;
+  $('cmp-paid-bar').style.width = `max(3px, ${(paidUsd / widest * 100).toFixed(1)}%)`;
+  $('cmp-value-bar').style.width = `max(3px, ${(valueUsd / widest * 100).toFixed(1)}%)`;
+
+  safe('cycles', renderCycles);
+
+  const tail = days.slice(-14);
+  safe('sparklines', () => {
+    sparkline('spark-value', tail.map(d => d.cost));
+    sparkline('spark-tokens', tail.map(d => tokensOf(d)), 'var(--series-3)');
+    sparkline('spark-calls', tail.map(d => d.calls), 'var(--series-2)');
+  });
+
+  // Daily columns for the latest month only — the whole range on one axis squeezes bands
+  // below a usable hit target, and the month is the unit the plan is billed in anyway.
+  const inMonth = days.filter(d => d.date.startsWith(m.month));
+  const items = inMonth.map(d => ({
+    label: String(Number(d.date.slice(8))),
+    value: d.cost,
+    date: d.date,
+    tipHead: thDate(d.date),
+    tipRows: [
+      [t('day.value'), money(d.cost)],
+      [t('label.baht'), baht(d.cost)],
+      [t('label.tokens'), compact(tokensOf(d))],
+      ['request', full(d.calls)],
+      [t('label.model'), topModelName(d.models)],
+    ],
+  }));
+  safe('chart-daily', () => columnChart($('chart-daily'), items, {
+    id: 'chart-daily',
+    minBand: 34,
+    tick: (v) => '$' + compact(v),
+    showLabel: (i, n) => n <= 16 || i % 2 === 0,
+    onClick: (d) => { selectedDay = d.date; switchView('day'); },
+  }));
+
+  const peak = inMonth.reduce((a, b) => (b.cost > a.cost ? b : a), inMonth[0] || { cost: 0 });
+  $('daily-peak').textContent = peak && peak.date
+    ? t('peak.sentence', fmtDate(peak.date), money(peak.cost), full(peak.calls), topModelName(peak.models))
+    : '';
+
+  // Newest day on the FIRST row (owner's ask, 2026-08-11): today is what gets looked at, and the
+  // rows read top-down. slice() already copied, so reverse() cannot disturb `days` for the views
+  // below — which do depend on ascending order.
+  safe('heatmap', () => heatmap('heatmap', days.slice(-10).reverse()));
+  const roll = scopedRollup();
+  safe('model-bars', () => modelBars($('model-bars'), roll.models, roll.totals.cost));
+  safe('composition', renderComposition);
+  safe('projects', renderProjects);
+}
+
+function topModelName(models) {
+  const top = Object.entries(models || {}).sort((a, b) => b[1].cost - a[1].cost)[0];
+  return top ? modelName(top[0]) : '—';
+}
+
+/* Token composition. A 99%-to-1% split is unreadable as a stacked bar alone, so the bar is
+   the shape and the table beside it carries the numbers — which is also the table view the
+   sub-3:1 light-mode hue obliges. */
+function renderComposition() {
+  // Renamed from `t` when the translate function took that name at module scope.
+  const tk = scopedRollup().totals;
+  const parts = [
+    { key: t('tok.cacheread'), v: tk.cache_read,  color: 'var(--series-1)', mult: '0.1×' },
+    { key: t('tok.cachewrite'), v: tk.cache_write, color: 'var(--series-2)', mult: '1.25–2×' },
+    { key: t('tok.out'), v: tk.out,         color: 'var(--series-3)', mult: '5×' },
+    { key: t('tok.in'), v: tk.in,          color: 'var(--neutral)',  mult: '1×' },
+  ];
+  const total = parts.reduce((s, p) => s + p.v, 0) || 1;
+  $('comp-bar').innerHTML = parts
+    .map(p => `<i style="background:${p.color};width:${Math.max(pct(p.v, total), 0.4)}%"></i>`).join('');
+  $('comp-legend').innerHTML = parts
+    .map(p => `<span><i style="background:${p.color}"></i>${p.key}</span>`).join('');
+  $('comp-table').querySelector('tbody').innerHTML = parts.map(p => `
+    <tr>
+      <td class="strong">${p.key}</td>
+      <td>${compact(p.v)}</td>
+      <td>${pct(p.v, total).toFixed(1)}%</td>
+      <td style="color:var(--ink-muted)">${p.mult}</td>
+    </tr>`).join('');
+}
+
+const PROJECT_ROWS = 5;
+
+function renderProjects() {
+  const roll = scopedRollup();
+  const all = Object.entries(roll.projects).map(([name, v]) => ({ name, ...v }))
+    .sort((a, b) => b.cost - a.cost);
+  const rows = all.slice(0, PROJECT_ROWS);
+  // Say what was cut rather than silently truncating — a top-5 that looks like the whole list
+  // makes the long tail invisible, and the tail is where "why is my quota gone" usually hides.
+  const hidden = all.slice(PROJECT_ROWS);
+  const hiddenCost = hidden.reduce((s, r) => s + r.cost, 0);
+  $('project-note').textContent = hidden.length
+    ? t('proj.showing', PROJECT_ROWS, hidden.length, money(hiddenCost), pct(hiddenCost, roll.totals.cost).toFixed(1))
+    : t('proj.all', all.length);
+  const max = Math.max(...rows.map(r => r.cost), 0.0001);
+  $('project-table').innerHTML = `
+    <thead><tr><th>${t('th.project')}</th><th>${t('label.value')}</th><th>${t('th.share')}</th><th>${t('th.tokens')}</th><th>${t('label.requests')}</th><th style="width:34%"></th></tr></thead>
+    <tbody>${rows.map(r => `
+      <tr>
+        <td class="strong">${r.name}</td>
+        <td>${money(r.cost)}</td>
+        <td>${pct(r.cost, roll.totals.cost).toFixed(1)}%</td>
+        <td>${compact(tokensOf(r))}</td>
+        <td>${full(r.calls)}</td>
+        <td class="minibar-track"><div class="minibar" style="width:${(r.cost / max * 100).toFixed(1)}%"></div></td>
+      </tr>`).join('')}</tbody>`;
+}
+
+function renderDaily() {
+  const rows = days.slice().reverse();
+  const max = Math.max(...rows.map(r => r.cost), 0.0001);
+  // Rank by value across the whole range, not by row order — the table is sorted by date, so
+  // the badge is the only thing that answers "which were the big days" without re-sorting.
+  const rank = new Map(days.slice().sort((a, b) => b.cost - a.cost).slice(0, 3)
+    .map((d, i) => [d.date, i + 1]));
+  const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
+  const badge = (date) => `<span class="rank">${MEDALS[rank.get(date)] || ''}</span>`;
+  $('daily-table').innerHTML = `
+    <thead><tr><th>${t('th.day')}</th><th>${t('label.value')}</th><th>${t('label.baht')}</th><th>${t('label.tokens')}</th><th>${t('th.output')}</th><th>${t('label.requests')}</th><th>${t('th.mainmodel')}</th><th style="width:22%"></th></tr></thead>
+    <tbody>${rows.map(r => `
+      <tr class="clickable" data-date="${r.date}">
+        <td class="strong">${badge(r.date)}${thDate(r.date)}</td>
+        <td>${money(r.cost)}</td>
+        <td>${baht(r.cost)}</td>
+        <td>${compact(tokensOf(r))}</td>
+        <td>${compact(r.out)}</td>
+        <td>${full(r.calls)}</td>
+        <td>${topModelName(r.models)}</td>
+        <td class="minibar-track"><div class="minibar" style="width:${(r.cost / max * 100).toFixed(1)}%"></div></td>
+      </tr>`).join('')}</tbody>`;
+  $('daily-table').querySelectorAll('tr.clickable').forEach(tr => {
+    tr.addEventListener('click', () => { selectedDay = tr.dataset.date; switchView('day'); });
+  });
+}
+
+function renderDay() {
+  const d = days.find(x => x.date === selectedDay) || days[days.length - 1];
+  if (!d) return;
+  selectedDay = d.date;
+  $('day-select').value = d.date;
+
+  $('d-cost').textContent = money(d.cost);
+  $('d-cost-foot').textContent = baht(d.cost);
+  $('d-tokens').textContent = compact(tokensOf(d));
+  $('d-tokens-foot').textContent = t('day.tokfoot', compact(d.out), compact(d.cache_read));
+  $('d-calls').textContent = full(d.calls);
+
+  const peakHour = d.hours.indexOf(Math.max(...d.hours));
+  $('d-peak').textContent = d.calls ? `${String(peakHour).padStart(2, '0')}:00` : '—';
+  $('d-peak-foot').textContent = d.calls ? `${money(d.hours[peakHour])} · ${full(d.hour_calls[peakHour])} request` : '';
+
+  columnChart($('chart-hours'), d.hours.map((v, h) => ({
+    label: String(h).padStart(2, '0'),
+    value: v,
+    tipHead: `${String(h).padStart(2, '0')}:00 – ${String(h).padStart(2, '0')}:59`,
+    tipRows: [[t('label.value'), money(v)], [t('label.baht'), baht(v)], [t('label.requests'), full(d.hour_calls[h])]],
+  })), { id: 'chart-hours', minBand: 30, tick: (v) => '$' + compact(v), showLabel: (i) => i % 2 === 0 });
+
+  modelBars($('day-model-bars'), d.models, d.cost);
+
+  const projRows = Object.entries(d.projects).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.cost - a.cost);
+  const pmax = Math.max(...projRows.map(r => r.cost), 0.0001);
+  $('day-project-table').innerHTML = `
+    <thead><tr><th>${t('th.project')}</th><th>${t('label.value')}</th><th>${t('label.requests')}</th><th style="width:38%"></th></tr></thead>
+    <tbody>${projRows.map(r => `
+      <tr>
+        <td class="strong">${r.name}</td>
+        <td>${money(r.cost)}</td>
+        <td>${full(r.calls)}</td>
+        <td class="minibar-track"><div class="minibar" style="width:${(r.cost / pmax * 100).toFixed(1)}%"></div></td>
+      </tr>`).join('')}</tbody>`;
+}
+
+/* ───────────────────────── wiring ───────────────────────── */
+const VIEWS = ['overview', 'daily', 'day', 'cycles'];
+function switchView(name, keepScroll) {
+  if (!VIEWS.includes(name)) name = 'overview';
+  document.querySelectorAll('nav.tabs button').forEach(b =>
+    b.setAttribute('aria-selected', String(b.dataset.view === name)));
+  VIEWS.forEach(v => $('view-' + v).classList.toggle('hidden', v !== name));
+  hideTip();
+  // The view lives in the hash so a tab is linkable and survives a reload — otherwise every
+  // refresh silently drops the reader back on the overview.
+  if (location.hash.slice(1) !== name) history.replaceState(null, '', '#' + name);
+  if (name === 'day') safe('day-view', renderDay);
+  if (name === 'overview') safe('overview-view', renderOverview);
+  if (name === 'cycles') safe('cycles-view', renderCycles);
+  if (!keepScroll) window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+document.querySelectorAll('nav.tabs button').forEach(b =>
+  b.addEventListener('click', () => switchView(b.dataset.view)));
+
+const THEME_KEY = 'sum-usage-claude.theme';
+try {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+} catch (_) {}
+
+$('theme-btn').addEventListener('click', () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem(THEME_KEY, next); } catch (_) {}
+  // Charts bake their colours into generated markup, so a theme change has to redraw them —
+  // CSS alone only updates the parts that reference the custom properties directly.
+  safe('theme-redraw', () => {
+    renderOverview();
+    if (!$('view-day').classList.contains('hidden')) renderDay();
+  });
+});
+
+$('fx').addEventListener('input', () => { saveSettings(); renderOverview(); renderDaily(); });
+
+$('cycle-select').addEventListener('change', () => {
+  const v = $('cycle-select').value;
+  selectedCycle = v === '' ? -1 : Number(v);
+  applyCycleScope();
+});
+
+$('cyc-save').addEventListener('click', saveCycleFromForm);
+$('cyc-cancel').addEventListener('click', () => { clearCycleForm(); setCycleMsg('', ''); });
+// Enter anywhere in the form saves, so adding a cycle never needs the mouse.
+for (const id of ['cyc-start', 'cyc-end', 'cyc-usd']) {
+  $(id).addEventListener('keydown', e => { if (e.key === 'Enter') saveCycleFromForm(); });
+}
+
+$('day-select').addEventListener('change', () => { selectedDay = $('day-select').value; renderDay(); });
+$('day-prev').addEventListener('click', () => stepDay(-1));
+$('day-next').addEventListener('click', () => stepDay(+1));
+function stepDay(delta) {
+  const i = days.findIndex(d => d.date === selectedDay);
+  const next = days[Math.min(days.length - 1, Math.max(0, i + delta))];
+  if (next) { selectedDay = next.date; renderDay(); }
+}
+
+/* ───────────────────────── boot ───────────────────────── */
+$('fx').value = settings.fx;
+
+$('range-sub').textContent = days.length
+  ? t('range.line', fmtDate(DATA.range.first), fmtDate(DATA.range.last), days.length, DATA.generated_at.slice(0, 16).replace('T', ' '))
+  : t('range.none');
+
+// day-select is filled by applyCycleScope, which knows the active cycle's range.
+
+$('footer-note').innerHTML =
+  t('note.value')
+  + `${DATA.unpriced && Object.keys(DATA.unpriced).length
+      ? t('note.unpriced', Object.keys(DATA.unpriced).join(', ')) : ''}`;
+
+// Cycle rows must exist before the first renderOverview: computeCycles() reads them out of the DOM,
+// so booting in the other order would show the calendar-month fallback for one frame even when
+// invoices are saved. Opening the panel when cycles exist keeps restored data visible instead of
+// hidden behind a collapsed summary.
+function redrawAll() {
+  safe('lang-cycles',  () => { renderCycleSelect(); renderCycles(); });
+  safe('lang-overview', renderOverview);
+  safe('lang-daily',    renderDaily);
+  safe('lang-day',      () => { if (!$('view-day').classList.contains('hidden')) renderDay(); });
+  safe('lang-range',    () => {
+    $('range-sub').textContent = days.length
+      ? t('range.line', fmtDate(DATA.range.first), fmtDate(DATA.range.last), days.length,
+          DATA.generated_at.slice(0, 16).replace('T', ' '))
+      : t('range.none');
+    $('footer-note').innerHTML = t('note.value')
+      + (DATA.unpriced && Object.keys(DATA.unpriced).length
+          ? t('note.unpriced', Object.keys(DATA.unpriced).join(', ')) : '');
+  });
+}
+
+$('lang-btn').addEventListener('click', () => setLang(LANG === 'th' ? 'en' : 'th'));
+
+// Before the first paint, so a reader who chose English never sees a frame of Thai.
+applyI18n();
+
+safe('boot-cycles', () => { renderCycleSelect(); applyCycleScope(); });
+safe('boot-overview', renderOverview);
+safe('boot-daily', renderDaily);
+switchView(location.hash.slice(1) || 'overview', true);
+</script>
+</body>
+</html>
