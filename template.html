@@ -851,7 +851,7 @@ const tokensOf  = (o) => o.in + o.out + o.cache_read + o.cache_write;
 
 /* ───────────────────────── settings & billing cycles ─────────────────────────
    A billing period is what the money actually bought, and a calendar month is not one: with invoices
-   on Jul 21 ($20) and Aug 6 ($90.09), "August" holds the tail of one cycle and the head of another.
+   dated Jul 21 and Aug 6, "August" holds the tail of one cycle and the head of another.
    The fixed plan selector this replaced could not express that at all — one price for every month,
    while the real price changed between them.
 
