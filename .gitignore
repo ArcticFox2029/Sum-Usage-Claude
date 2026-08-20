@@ -15,3 +15,6 @@ __pycache__/
 # Launch notes are working material for the author, not part of what people install.
 LAUNCH.md
 OUTREACH.md
+track_traffic.py
+data/
+.token
