@@ -82,6 +82,26 @@ OUTPUT_JSON = DATA / "usage_data.json"
 TRANSCRIPT_GLOB = "**/*.jsonl"
 TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 
+# 🐛 [fixed 2026-08-25] A second Claude account writes somewhere else entirely, and only the first
+# root was ever read. This machine runs two: the default under ~/.claude, and a second signed in as
+# a different address whose config lives under ~/.config/claude-account2. Work done in the second
+# one was invisible to every figure on the dashboard.
+#
+# It has been nearly invisible rather than badly wrong so far, and only by luck: account 2's
+# Lumin-App project is a SYMLINK back into ~/.claude/projects, so those sessions were already being
+# read through the first root. What actually went missing was work done in the second account from
+# any OTHER folder — one session, from the home directory, on 2026-08-19. The exposure grows the
+# moment a new folder is opened there, and it fails the same silent way as the glob bug above: no
+# error, just a smaller number.
+#
+# Resolve before reading, and skip a path already seen. Without that the symlinked project is walked
+# twice — harmless for totals, since requestId dedup catches it, but it would double the file and
+# byte counts in the run summary and give each copy its own cursor entry.
+TRANSCRIPT_ROOTS = [
+    TRANSCRIPT_ROOT,
+    Path.home() / ".config" / "claude-account2" / "projects",
+]
+
 # Model names that appear in transcripts but never reach the API, so they are neither a cost
 # nor a call worth counting. Without this they surface every run as "no price row for
 # <synthetic>", training the reader to skip a warning that does have a real form: a genuinely
@@ -153,9 +173,14 @@ def project_name(path):
     # First component under TRANSCRIPT_ROOT, not path.parent: with the recursive glob a
     # transcript's parent is often a session UUID or a "subagents" folder, which would label
     # every subagent run as a project of its own.
-    try:
-        raw = path.relative_to(TRANSCRIPT_ROOT).parts[0]
-    except ValueError:
+    raw = None
+    for root in TRANSCRIPT_ROOTS:
+        try:
+            raw = path.relative_to(root).parts[0]
+            break
+        except ValueError:
+            continue
+    if raw is None:
         raw = path.parent.name
     if raw.startswith("-private-tmp") or raw.startswith("-tmp"):
         return "ชั่วคราว (tmp)"
@@ -234,7 +259,19 @@ def scan(prices, cursor, seen, quiet=False):
         d["hours"][when.hour] += cost
         d["hour_calls"][when.hour] += 1
 
-    for path in sorted(TRANSCRIPT_ROOT.glob(TRANSCRIPT_GLOB)):
+    seen_files = set()
+    all_paths = []
+    for root in TRANSCRIPT_ROOTS:
+        if not root.exists():
+            continue
+        for path in root.glob(TRANSCRIPT_GLOB):
+            real = path.resolve()
+            if real in seen_files:
+                continue
+            seen_files.add(real)
+            all_paths.append(path)
+
+    for path in sorted(all_paths):
         key = str(path)
         size = path.stat().st_size
         start = cursor.get(key, 0)
