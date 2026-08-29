@@ -97,10 +97,30 @@ TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 # Resolve before reading, and skip a path already seen. Without that the symlinked project is walked
 # twice — harmless for totals, since requestId dedup catches it, but it would double the file and
 # byte counts in the run summary and give each copy its own cursor entry.
-TRANSCRIPT_ROOTS = [
-    TRANSCRIPT_ROOT,
-    Path.home() / ".config" / "claude-account2" / "projects",
-]
+# 🐛 [fixed 2026-08-29] The list was literally these two, and the comment above already said what
+# that costs: a third account fails "the same silent way — no error, just a smaller number". The
+# shortcuts point an account at a config dir by exporting CLAUDE_CONFIG_DIR (see
+# command/claude_session2.sh), so the directories are named, not registered anywhere this script
+# could read. Globbing the one place they are all created is the closest thing to a registry, and it
+# picks up account 3 on the day it exists rather than the day someone notices the totals are low.
+def _transcript_roots():
+    """Every Claude config dir's projects/ — the default one, plus each ~/.config/claude*/."""
+    roots = [TRANSCRIPT_ROOT]
+    for d in sorted((Path.home() / ".config").glob("claude*")):
+        projects = d / "projects"
+        if projects.is_dir():
+            roots.append(projects)
+    # Resolve-and-dedupe happens at read time (account 2's Lumin-App project is a symlink back into
+    # the first root); this only avoids listing the same literal path twice.
+    seen, out = set(), []
+    for r in roots:
+        if str(r) not in seen:
+            seen.add(str(r))
+            out.append(r)
+    return out
+
+
+TRANSCRIPT_ROOTS = _transcript_roots()
 
 # Model names that appear in transcripts but never reach the API, so they are neither a cost
 # nor a call worth counting. Without this they surface every run as "no price row for
