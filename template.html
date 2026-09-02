@@ -1380,9 +1380,19 @@ function renderOverview() {
     sparkline('spark-calls', tail.map(d => d.calls), 'var(--series-2)');
   });
 
-  // Daily columns for the latest month only — the whole range on one axis squeezes bands
-  // below a usable hit target, and the month is the unit the plan is billed in anyway.
-  const inMonth = days.filter(d => d.date.startsWith(m.month));
+  // 🐛 The columns used to be re-filtered to the calendar month, on the reasoning that "the month
+  // is the unit the plan is billed in anyway". It is not: a cycle runs 6 Aug – 2 Sep, so on the
+  // 2nd the chart showed TWO bars while the table beside it said 28 active days and $10,104. The
+  // scope comment above cycleRange() already says `days` is the cycle-scoped list and that every
+  // view reads it "rather than by remembering to filter each one" — this line was the one place
+  // that remembered to, and filtered against the scope instead of with it.
+  //
+  // The month fallback survives for the case that reasoning was actually protecting: with no
+  // cycles entered, `days` is the WHOLE range, and putting every day since install on one axis
+  // squeezes the bands below a usable hit target.
+  const inMonth = selectedCycle >= 0 && cycleRange(selectedCycle)
+    ? days
+    : days.filter(d => d.date.startsWith(m.month));
   const items = inMonth.map(d => ({
     label: String(Number(d.date.slice(8))),
     value: d.cost,
